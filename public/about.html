@@ -14,14 +14,17 @@
 
 <div class="container">
 	
-	<h1>About Kubetoy 1.7.0</h1>
+	<h1>About Kubetoy 1.7.5</h1>
 	
 	<p>This application is a simple Node.js application that is expected to run in a
 	container deployed by kubernetes.  It was created to help explore IBM Cloud Private
 	by allowing the user to write messages to the log, crash the application, and even
 	create and view files in a shared file system.</p>
 	
-	<p>This latest version added the Stress page, which allows you to issue the Linux 
+  <p>This latest version added the Cloud Object Storage page, which allows you to configure and integrate
+    with IBM Cloud Object Storage endpoints.  </p>
+
+  <p>The Stress page allows you to issue the Linux 
 	<a href="https://people.seas.harvard.edu/~apw/stress/" target="_blank">stress</a>
 	command.  This allows you to intentionally create CPU, IO and memory access loads in the
 	container running this app.  The mutate button was also added that will trigger a 
