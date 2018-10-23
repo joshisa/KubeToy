@@ -7,6 +7,7 @@ CMD mkdir /app
 WORKDIR /app
 
 COPY app.js .
+COPY cos-credentials.json .
 COPY LICENSE .
 COPY package.json .
 COPY README.md .

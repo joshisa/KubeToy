@@ -6,13 +6,15 @@
 		"start": "node app.js"
 	},
 	"dependencies": {
-		"express": "4.15.x",
 		"body-parser": "1.18.*",
 		"ejs": "^2.5.x",
-		"valid-filename": "*",
+		"express": "^4.16.4",
 		"filename-reserved-regex": "*",
 		"net-ping-hr": "^2.0.x",
-		"sprintf-js": "*"
+		"ibm-cos-sdk": "*",
+		"formidable": "*",
+		"sprintf-js": "*",
+		"valid-filename": "*"
 	},
 	"repository": {}
 }

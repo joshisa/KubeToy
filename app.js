@@ -6,13 +6,22 @@ const ping = require('net-ping-hr');
 const util = require('util');
 const sprintf = require("sprintf-js").sprintf;
 const dns = require('dns');
+const ibmcos = require('ibm-cos-sdk');
+const formidable = require('formidable');
 const { spawn } = require('child_process');
 const { exec } = require('child_process');
 
-const appVersion = "1.7.0";
+const appVersion = "1.7.5";
 
 const configFile = "/var/config/config.json";
 const secretFile = "/var/secret/toy-secret.txt";
+
+//load Object Storage (S3) credentials
+var ibmcosconfig = null
+try {
+  ibmcosconfig = require("./cos-credentials.json");
+}
+catch (e) {}
 
 var app = express();
 app.use(express.static(__dirname + '/public'));
@@ -23,6 +32,7 @@ app.use(bodyParser.urlencoded({
 app.set('views', __dirname + '/views');
 app.set('view engine', 'ejs');
 
+var cos = new ibmcos.S3(ibmcosconfig);
 
 var pod = "xxxxx";
 if( process.env.HOSTNAME ) {
@@ -51,6 +61,7 @@ function healthStatus(){
 var directory = '/var/test';
 
 var filesystem = fs.existsSync(directory);
+var objectstore = true;
 
 app.set('port', process.env.PORT || 3000);
 
@@ -60,12 +71,12 @@ if( filesystem ) {
 			if( err ) {
 				var pretty = JSON.stringify(err,null,4);
 				  console.error(pretty);
-				  res.render('error', { "pod": pod, "filesystem": filesystem, "msg": pretty });
+				  res.render('error', { "pod": pod, "filesystem": filesystem, "msg": pretty, "objectstore": objectstore });
 			} else {
 				if( !items ) {
 					items = [];
 				}
-				res.render('files', { "pod": pod, "items": items, "filesystem": filesystem, "directory": directory });
+				res.render('files', { "pod": pod, "items": items, "filesystem": filesystem, "directory": directory, "objectstore": objectstore});
 			}
 		});
 	});
@@ -92,7 +103,7 @@ if( filesystem ) {
 				  if (err) {
 					  var pretty = JSON.stringify(err,null,4);
 					  console.error(pretty);
-					  res.render('error', { "pod": pod, "filesystem": filesystem, "msg": pretty });
+					  res.render('error', { "pod": pod, "filesystem": filesystem, "msg": pretty, "objectstore": objectstore});
 				  } else{
 					  res.redirect('files');
 				  }
@@ -100,12 +111,104 @@ if( filesystem ) {
 		} else {
 			var pretty ='Invalid filename: "' + filename + '"';
 			console.error(pretty);
-			res.render('error', { "pod": pod, "filesystem": filesystem, "msg": pretty });
+			res.render('error', { "pod": pod, "filesystem": filesystem, "msg": pretty, "objectstore": objectstore });
 		}
 		
 	});
 
 }
+
+if( objectstore ) {
+	app.get('/cos', function(req,res){
+				items = [];
+        //list documents from IBM Cloud Object storage
+        cos.listObjects({
+          Bucket: ibmcosconfig.bucket
+        }, function(err, data) {
+            if (err) {
+                console.log(err.extendedRequstId);
+            } else if (data && data.Contents) {
+                data.Contents.forEach(function(content) {
+                    items[items.length] = content.Key;
+                });
+            }
+            res.render('cos', { "cos": cos, "objectstore": objectstore, "pod": pod, "items":items, "filesystem": filesystem});
+        });
+	});
+
+  app.get('/cosshow', function(req,res){
+		var index = req.query.f;
+    var key = req.query.key;
+    var cosGetObjectStream = cos.getObject({
+        Bucket: ibmcosconfig.bucket,
+        Key: key
+    }).createReadStream();
+    cosGetObjectStream.pipe(res);
+	});
+
+  app.post('/cosdel', function(req,res){
+		  var key = req.query.key;
+      cos.deleteObject({
+        Bucket: ibmcosconfig.bucket,
+        Key: key
+      },function(err, data) {
+        if (err) {
+          console.log(err);
+        }
+        res.header('Cache-Control', 'no-cache, private, no-store, must-revalidate, max-stale=0, post-check=0, pre-check=0');
+        res.redirect('cos');
+      });
+	});
+
+	app.post('/cos', function(req,res){
+		var filename = req.body.filename;
+    var filepath = "";
+		if( validFilename( filename ) ){
+			var content = req.body.content;
+			console.log( 'creating file: ' + filename );
+      console.log( 'target bucket: ' + ibmcosconfig.bucket);
+			cos.putObject({
+          Bucket: ibmcosconfig.bucket,
+          Key: filename,
+          Body: content
+      },function(err, data) {
+        if (err) {
+          console.log(err);
+        }
+        res.header('Cache-Control', 'no-cache, private, no-store, must-revalidate, max-stale=0, post-check=0, pre-check=0');
+        res.redirect('cos');
+      });
+		} else {
+      var form = new formidable.IncomingForm();
+      // Putting the file into COS
+      // After parse ... need to redirect/refresh page
+      form.parse(req, function(err, fields, files) {
+        if (err) next(err);
+        cos.putObject({
+            Bucket: ibmcosconfig.bucket,
+            Key: files.chosenfilename.name,
+            Body: fs.createReadStream(files.chosenfilename.path)
+        },function(err, data) {
+          if (err) {
+            console.log(err);
+          }
+          res.header('Cache-Control', 'no-cache, private, no-store, must-revalidate, max-stale=0, post-check=0, pre-check=0');
+          res.redirect('cos');
+        });
+        /*
+        res.writeHead(200, {'content-type': 'text/plain'});
+        res.write('received upload:\n\n');
+        res.end(util.inspect({fields: fields, files: files}));
+        */
+      });
+			//var pretty ='Invalid filename: "' + filename + '"';
+			//console.error(pretty);
+			//res.render('error', { "pod": pod, "filesystem": filesystem, "msg": pretty , "objectstore": objectstore});
+		};
+		
+	});
+};
+
 
 app.get('/mutate', function(req,res){
 	console.log("mutating");
@@ -126,7 +229,8 @@ app.get('/hogs', function(req,res){
 			"vm": stressVm,
 			"vmBytes": stressVmBytes,
 			"timeout": stressTimeout,
-			"msg": ""
+			"msg": "",
+      "objectstore": objectstore
 		};
 	
 	res.render('hogs', args);
@@ -175,7 +279,8 @@ app.post('/stress', function(req,res){
 			"vm": stressVm,
 			"vmBytes": stressVmBytes,
 			"timeout": stressTimeout,
-			"msg": msg
+			"msg": msg,
+      "objectstore": objectstore
 		};
 		
 	res.render('hogs', args);
@@ -195,7 +300,8 @@ app.post('/dns', function(req,res){
 				"pingActive": "",
 				"dnsResponse": message,
 				"dnsHost": host,
-				"dnsActive": "active" 
+				"dnsActive": "active",
+        "objectstore": objectstore
 			};
 		
 		res.render('network', args);
@@ -220,7 +326,8 @@ app.post('/dns', function(req,res){
 						"pingActive": "",
 						"dnsResponse": err,
 						"dnsHost": host,
-						"dnsActive": "active" 
+						"dnsActive": "active",
+            "objectstore": objectstore
 					};
 				
 				res.render('network', args);
@@ -243,7 +350,8 @@ app.post('/dns', function(req,res){
 						"pingActive": "",
 						"dnsResponse": addrList,
 						"dnsHost": host,
-						"dnsActive": "active" 
+						"dnsActive": "active",
+            "objectstore": objectstore
 					};
 				res.render('network', args);
 			}
@@ -268,7 +376,8 @@ app.post('/ping', function(req,res){
 				"pingActive": "active",
 				"dnsResponse": "",
 				"dnsHost": "",
-				"dnsActive": "" 
+				"dnsActive": "",
+        "objectstore": objectstore
 			};
 		res.render('network', args);
 	}
@@ -295,7 +404,8 @@ app.post('/ping', function(req,res){
 					"pingActive": "active",
 					"dnsResponse": "",
 					"dnsHost": "",
-					"dnsActive": "" 
+					"dnsActive": "",
+          "objectstore": objectstore
 				};
 			res.render('network', args);
 		} else {
@@ -317,7 +427,8 @@ app.post('/ping', function(req,res){
 						"pingActive": "active",
 						"dnsResponse": "",
 						"dnsHost": "",
-						"dnsActive": "" 
+						"dnsActive": "",
+            "objectstore": objectstore
 					};
 				res.render('network', args);
 			});
@@ -337,7 +448,8 @@ app.get('/network', function(req,res){
 			"pingActive": "",
 			"dnsResponse": "",
 			"dnsHost": "",
-			"dnsActive": "active" 
+			"dnsActive": "active",
+      "objectstore": objectstore
 		};
 	res.render('network', args);
 });
@@ -411,7 +523,7 @@ app.get('/config',
 		}
 		var prettyEnv = JSON.stringify(process.env,null,4);
 		
-		res.render('config', {"pod": pod, "pretty": prettyEnv, "filesystem": filesystem, "config": config, "secret": secret });
+		res.render('config', {"pod": pod, "pretty": prettyEnv, "filesystem": filesystem, "config": config, "secret": secret, "objectstore": objectstore });
 	}
 );
 
@@ -419,7 +531,7 @@ app.get('/config',
 app.get('/home',  
 	function(req, res) {
 		var status = healthStatus();
-		res.render('home', {"pod": pod, "duckImage": duckImage, "healthStatus": status, "filesystem": filesystem, "version": appVersion });
+		res.render('home', {"pod": pod, "duckImage": duckImage, "healthStatus": status, "filesystem": filesystem, "version": appVersion, "objectstore": objectstore });
 	}
 );
 
