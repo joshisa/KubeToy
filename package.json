@@ -12,6 +12,7 @@
 		"filename-reserved-regex": "*",
 		"net-ping-hr": "^2.0.x",
 		"ibm-cos-sdk": "*",
+		"https-proxy-agent": "*",
 		"formidable": "*",
 		"sprintf-js": "*",
 		"valid-filename": "*"
