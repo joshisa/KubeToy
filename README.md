@@ -1,5 +1,5 @@
 # KubeToy
-## v1.7.0
+## v1.7.5
 ### Tested with ICP versions: 2.1.0 - 3.1.0
 
 A simple Node.js application that deploys to IBM Cloud Private.  It is used to help 
