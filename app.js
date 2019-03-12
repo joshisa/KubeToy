@@ -17,6 +17,13 @@ const appVersion = "1.7.5";
 const configFile = "/var/config/config.json";
 const secretFile = "/var/secret/toy-secret.txt";
 
+//load Object Storage (S3) credentials
+var ibmcosconfig = null
+try {
+  ibmcosconfig = require("./cos-credentials.json");
+}
+catch (e) {}
+
 var app = express();
 app.use(express.static(__dirname + '/public'));
 app.use(bodyParser.urlencoded({
@@ -32,16 +39,7 @@ const agent = new HttpsProxyAgent({
     secureProxy: true
 });
  
-var cos = new ibmcos.S3({
-    apiKeyId: 'apikey',
-    ibmAuthEndpoint: 'authend',
-    serviceInstanceId: 'servid',
-    bucket:'aloha-demo',
-    endpoint:'endpoint',
-    httpOptions: {
-        agent: agent
-    }
-});
+var cos = new ibmcos.S3(ibmcosconfig);
 
 var pod = "xxxxx";
 if( process.env.HOSTNAME ) {
